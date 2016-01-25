@@ -19,10 +19,9 @@
 {
     "name": "MRP Project Link",
     "summary": "Link production with projects",
-    "version": "8.0.1.1.0",
+    "version": "8.0.1.2.0",
     "depends": [
-        "mrp",
-        "analytic",
+        "project",
         "mrp_operations_extension",
     ],
     "author": "OdooMRP team,"
