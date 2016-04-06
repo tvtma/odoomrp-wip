@@ -16,6 +16,7 @@
 #
 ##############################################################################
 from openerp import models, fields, api, exceptions, _
+from openerp.addons import decimal_precision as dp
 
 
 class MrpRepair(models.Model):
@@ -38,7 +39,8 @@ class MrpRepair(models.Model):
                 vals = record._catch_repair_line_information_for_analytic(line)
                 if vals:
                     analytic_line_obj.create(vals)
-            for line in record.operations.filtered('load_cost'):
+            for line in record.operations.filtered(
+                    lambda x: x.load_cost and x.type == 'add'):
                 vals = record._catch_repair_line_information_for_analytic(line)
                 if vals:
                     analytic_line_obj.create(vals)
@@ -61,7 +63,7 @@ class MrpRepair(models.Model):
         categ_id = line.product_id.categ_id
         general_account = (line.product_id.property_account_income or
                            categ_id.property_account_income_categ or False)
-        amount = line.product_id.standard_price * line.product_uom_qty * -1
+        amount = line.cost_subtotal * -1
         if not amount:
             return False
         vals = {'name': name,
@@ -78,24 +80,41 @@ class MrpRepair(models.Model):
                 }
         return vals
 
-    @api.one
-    @api.model
+    @api.multi
     def action_invoice_create(self, group=False):
         res = super(MrpRepair, self).action_invoice_create(group=group)
-        for line in self.fees_lines:
-            if line.invoice_line_id and self.analytic_account:
-                line.invoice_line_id.write({'account_analytic_id':
-                                            self.analytic_account.id})
-        for line in self.operations:
-            if line.invoice_line_id and self.analytic_account:
-                line.invoice_line_id.write({'account_analytic_id':
-                                            self.analytic_account.id})
+        for record in self.filtered('analytic_account'):
+            record.mapped('fees_lines.invoice_line_id').write(
+                {'account_analytic_id': record.analytic_account.id})
+            record.mapped('operations.invoice_line_id').write(
+                {'account_analytic_id': record.analytic_account.id})
         return res
 
 
 class MrpRepairLine(models.Model):
     _inherit = 'mrp.repair.line'
 
+    @api.multi
+    @api.depends('product_id', 'product_uom_qty', 'lot_id')
+    def _compute_cost_subtotal(self):
+        for line in self:
+            std_price = 0
+            if line.product_id.cost_method == 'real' and line.lot_id:
+                quants = line.lot_id.quant_ids.filtered(
+                    lambda x: x.location_id.usage == 'internal')
+                if quants:
+                    std_price = quants[:1].cost
+            else:
+                std_price = line.product_id.standard_price
+            line.standard_price = std_price
+            line.cost_subtotal = line.standard_price * line.product_uom_qty
+
+    standard_price = fields.Float(
+        string='Cost Price', digits=dp.get_precision('Account'),
+        compute='_compute_cost_subtotal', store=True)
+    cost_subtotal = fields.Float(
+        string='Cost Subtotal', digits=dp.get_precision('Account'),
+        compute='_compute_cost_subtotal', store=True)
     user_id = fields.Many2one('res.users', string='User', required=True,
                               default=lambda self: self.env.user)
     load_cost = fields.Boolean(string='Load Cost', default=True)
@@ -104,6 +123,23 @@ class MrpRepairLine(models.Model):
 class MrpRepairFee(models.Model):
     _inherit = 'mrp.repair.fee'
 
+    @api.multi
+    @api.depends('product_id', 'product_uom_qty')
+    def _compute_cost_subtotal(self):
+        for fee in self:
+            fee.standard_price = fee.product_id.standard_price
+            fee.cost_subtotal = (fee.product_id.standard_price *
+                                 fee.product_uom_qty)
+
     user_id = fields.Many2one('res.users', string='User', required=True,
                               default=lambda self: self.env.user)
     load_cost = fields.Boolean(string='Load Cost', default=True)
+
+    # Computed field and not related. Because only has to be reloaded when a
+    # product or quantity is changed but not if products price is changed
+    standard_price = fields.Float(
+        string='Cost Price', digits=dp.get_precision('Account'),
+        compute='_compute_cost_subtotal', store=True)
+    cost_subtotal = fields.Float(
+        string='Cost Subtotal', digits=dp.get_precision('Account'),
+        compute='_compute_cost_subtotal', store=True)

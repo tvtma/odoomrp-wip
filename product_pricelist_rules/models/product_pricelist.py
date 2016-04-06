@@ -106,16 +106,9 @@ class PricelistItem(models.Model):
         domain.extend(['&', ('product_id', '=', False),
                        '&', ('product_tmpl_id', '=', False),
                        ('categ_id', '=', False)])
-        items = self.search(domain, order='min_quantity desc,sequence asc')
+        items = self.search(domain, order='sequence asc,min_quantity desc')
         item_ids = items.ids
         for item in items:
-            if item.base == -1:
-                item_ids.remove(item.id)
-                new_item_ids = self.domain_by_pricelist(
-                    item.base_pricelist_id.id, product_id=product_id,
-                    product_tmpl_id=product_tmpl_id, categ_id=categ_id,
-                    qty=qty, partner_id=partner_id)
-                item_ids += new_item_ids
             if item.base == -2:
                 if item.pricelist.type == 'sale':
                     suppinfo_obj = suppinfo_obj.with_context(
@@ -123,8 +116,10 @@ class PricelistItem(models.Model):
                 tmpl_id = product_tmpl_id
                 if not tmpl_id and product_id:
                     tmpl_id = product_obj.browse(product_id).product_tmpl_id.id
-                if not suppinfo_obj.search([('product_tmpl_id', '=', tmpl_id),
-                                            ('name', '=', partner_id)]):
+                suppinfos = suppinfo_obj.search(
+                    [('product_tmpl_id', '=', tmpl_id),
+                     ('name', '=', partner_id)])
+                if not suppinfos.mapped('pricelist_ids'):
                     item_ids.remove(item.id)
         return item_ids
 

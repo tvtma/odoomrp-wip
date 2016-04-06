@@ -64,8 +64,9 @@ class SaleOrderLine(models.Model):
 
     product_template = fields.Many2one(
         comodel_name='product.template', string='Product Template',
-        readonly=True, states={'draft': [('readonly', False)],
-                               'sent': [('readonly', False)]})
+        domain="[('sale_ok','=',True)]", readonly=True,
+        states={'draft': [('readonly', False)],
+                'sent': [('readonly', False)]})
     product_attributes = fields.One2many(
         comodel_name='sale.order.line.attribute', inverse_name='sale_line',
         string='Product attributes', copy=True,
@@ -129,10 +130,13 @@ class SaleOrderLine(models.Model):
             fiscal_position=fiscal_position, flag=flag)
         if product:
             product = product_obj.browse(product)
-            res['value']['product_attributes'] = (
-                product._get_product_attributes_values_dict())
+            attr_values_dict = product._get_product_attributes_values_dict()
+            attr_values = [(0, 0, values) for values in attr_values_dict]
+            res['value']['product_attributes'] = attr_values
             res['value']['name'] = self._get_product_description(
                 product.product_tmpl_id, product, product.attribute_value_ids)
+            if product.description_sale:
+                res['value']['name'] += '\n' + product.description_sale
         return res
 
     @api.multi
@@ -140,6 +144,8 @@ class SaleOrderLine(models.Model):
     def onchange_product_template(self):
         self.ensure_one()
         self.name = self.product_template.name
+        if self.product_template.description_sale:
+            self.name += '\n' + self.product_template.description_sale
         if not self.product_template.attribute_line_ids:
             self.product_id = (
                 self.product_template.product_variant_ids and

@@ -82,7 +82,8 @@ class PurchaseOrderLine(models.Model):
     _inherit = 'purchase.order.line'
 
     product_template = fields.Many2one(
-        comodel_name='product.template', string='Product Template')
+        comodel_name='product.template', string='Product Template',
+        domain="[('purchase_ok','=',True)]")
     product_attributes = fields.One2many(
         comodel_name='purchase.order.line.attribute',
         inverse_name='purchase_line', string='Product attributes', copy=True)
@@ -117,6 +118,8 @@ class PurchaseOrderLine(models.Model):
         self.ensure_one()
         res = {}
         self.name = self.product_template.name
+        if self.product_template.description_purchase:
+            self.name += '\n' + self.product_template.description_purchase
         if not self.product_template.attribute_line_ids:
             self.product_id = self.product_template.product_variant_ids[:1]
         else:
@@ -189,6 +192,8 @@ class PurchaseOrderLine(models.Model):
             self.name = self._get_product_description(
                 self.product_template, False,
                 self.product_attributes.mapped('value'))
+            if self.product_template.description_purchase:
+                self.name += '\n' + self.product_template.description_purchase
 
     @api.multi
     def onchange_product_id(

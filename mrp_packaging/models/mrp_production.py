@@ -85,13 +85,15 @@ class MrpProduction(models.Model):
     @api.one
     def recalculate_product_qty(self, qty, product):
         line = self.product_lines.filtered(
-            lambda x: x.product_id == product)
+            lambda x: x.product_id == product or
+            x.product_template == product.product_tmpl_id)
         line.write({'product_qty': qty})
 
     @api.one
     def assign_parent_lot(self, production):
         line = self.product_lines.filtered(
-            lambda x: x.product_id == production.product_id)
+            lambda x: x.product_id == production.product_id or
+            x.product_template == production.product_id.product_tmpl_id)
         line.write({'lot': (
                     production.move_created_ids2 and
                     production.move_created_ids2[0].restrict_lot_id.id or
@@ -109,6 +111,11 @@ class MrpProduction(models.Model):
         data['value'].update({'product_id': op_line.product.id,
                               'product_qty': final_product_qty,
                               'name': name})
+        try:
+            data['value'].update({'project_id': self.project_id.id})
+        except:
+            # This is in case mrp_project module is installed
+            pass
         return data['value']
 
     @api.one
@@ -277,3 +284,9 @@ class PackagingOperation(models.Model):
     package_product = fields.Many2one(
         comodel_name='product.product', string='Package Product',
         compute='_compute_package_product')
+
+    @api.multi
+    def write(self, values):
+        ''' Do not change data if there is a related packaging order '''
+        super(PackagingOperation,
+              self.filtered(lambda x: not x.processed)).write(values)
